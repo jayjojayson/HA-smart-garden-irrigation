@@ -1,0 +1,1094 @@
+blueprint:
+  name: "Smarte Gartenbewässerung"
+  description: >
+    🌱 Intelligente Steuerung deiner Gartenbewässerung — flexibel, solar-optimiert und vollautomatisch.
+
+
+    🎯 WAS KANN DIESER BLUEPRINT?
+
+    Steuere deine Bewässerung mit bis zu 4 Modi — einzeln oder kombiniert:
+
+    ⏰ Zeitplan-Helfer → Starte über einen HA-Schedule
+
+    🕐 Feste Uhrzeiten → Bis zu 3 feste Zeiten pro Tag
+
+    🔄 Rhythmussteuerung → Alle X Stunden innerhalb eines Zeitfensters
+
+    ☀️ Solarüberschuss → Nutze überschüssigen Solarstrom automatisch
+
+
+    🛡️ SCHUTZMECHANISMEN
+
+    🌧️ Regensensor-Sperre → Stoppt bei Niederschlag (einstellbarer Schwellenwert in L/m²)
+
+    🔋 Batteriespeicher-Sperre → Erst bewässern wenn dein Hausspeicher geladen ist (SoC %)
+
+    🔢 Tageslimit → Maximale Starts pro Tag
+
+    💧 Wasserlimit → Stoppt nach einer einstellbaren Literzahl pro Durchgang
+
+    🔌 Haupt-Schalter → Globale Ein/Aus-Sperre
+
+
+    📋 WAS BRAUCHST DU?
+
+    ✅ Mindestens einen Schalter (switch) für deine Bewässerung
+
+    ✅ Einen input_number-Helfer als Tageszähler (wird im Blueprint ausgewählt)
+
+    ➕ Optional: Sensoren für Solar, Regen, Batterie-SoC, Wasserverbrauch
+
+    ➕ Optional: Einen input_datetime-Helfer für den Solar-Mindestabstand
+
+
+    💡 TIPP: Öffne nur die Sektionen, die du brauchst — der Rest bleibt zugeklappt!
+  domain: automation
+
+  input:
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # GERÄTE & GRUNDEINSTELLUNGEN
+    # ═══════════════════════════════════════════════════════════════════════
+    geraete_section:
+      name: "Geräte & Grundeinstellungen"
+      icon: mdi:sprinkler-variant
+      description: "Bewässerungsgeräte, Dauer und Tageslimit konfigurieren."
+      collapsed: false
+      input:
+        irrigation_switches:
+          name: "Bewässerungsgeräte (Schalter)"
+          description: >
+            Beliebig viele Schalter für die Bewässerung.
+            Alle Geräte werden gleichzeitig ein- und ausgeschaltet.
+          selector:
+            entity:
+              domain: switch
+              multiple: true
+
+        irrigation_duration:
+          name: "Bewässerungsdauer (Minuten)"
+          description: "Wie lange laufen die Geräte pro Einschaltvorgang?"
+          default: 20
+          selector:
+            number:
+              min: 1
+              max: 120
+              step: 1
+              unit_of_measurement: min
+
+        max_starts_per_day:
+          name: "Maximale Starts pro Tag"
+          description: "Wie oft darf die Bewässerung pro Tag insgesamt starten?"
+          default: 3
+          selector:
+            number:
+              min: 1
+              max: 10
+              step: 1
+              unit_of_measurement: Starts
+
+        starts_counter:
+          name: "Tageszähler-Helfer (input_number)"
+          description: >
+            Ein input_number-Helfer der die heutigen Starts zählt.
+            Erstelle z.B. 'input_number.bewaesserung_starts_heute' (min=0, max=10, step=1).
+            Der Zähler wird automatisch um 00:00 Uhr auf 0 zurückgesetzt.
+          selector:
+            entity:
+              domain: input_number
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # MODUS: ZEITPLAN-HELFER
+    # ═══════════════════════════════════════════════════════════════════════
+    zeitplan_section:
+      name: "Zeitplan-Helfer"
+      icon: mdi:calendar-clock
+      description: "Bewässerung über einen HA-Zeitplan-Helfer (schedule.*) steuern."
+      collapsed: true
+      input:
+        enable_schedule:
+          name: "Zeitplan-Helfer aktivieren"
+          default: false
+          selector:
+            boolean:
+
+        schedule_entity:
+          name: "Zeitplan-Helfer (schedule.*)"
+          description: >
+            Bewässerung startet wenn der Helfer von 'off' auf 'on' wechselt.
+            Nur relevant wenn oben aktiviert.
+          default: "schedule.platzhalter"
+          selector:
+            entity:
+              domain: schedule
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # MODUS: FESTE UHRZEITEN
+    # ═══════════════════════════════════════════════════════════════════════
+    feste_uhrzeiten_section:
+      name: "Feste Uhrzeiten"
+      icon: mdi:clock-outline
+      description: "Bis zu drei feste Uhrzeiten für die Bewässerung festlegen."
+      collapsed: true
+      input:
+        enable_fixed_times:
+          name: "Feste Uhrzeiten aktivieren"
+          default: false
+          selector:
+            boolean:
+
+        fixed_time_1_enabled:
+          name: "Uhrzeit 1 aktiv"
+          default: false
+          selector:
+            boolean:
+
+        fixed_time_1:
+          name: "Uhrzeit 1"
+          default: "06:00:00"
+          selector:
+            time:
+
+        fixed_time_2_enabled:
+          name: "Uhrzeit 2 aktiv"
+          default: false
+          selector:
+            boolean:
+
+        fixed_time_2:
+          name: "Uhrzeit 2"
+          default: "18:00:00"
+          selector:
+            time:
+
+        fixed_time_3_enabled:
+          name: "Uhrzeit 3 aktiv"
+          default: false
+          selector:
+            boolean:
+
+        fixed_time_3:
+          name: "Uhrzeit 3"
+          default: "12:00:00"
+          selector:
+            time:
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # MODUS: RHYTHMUSSTEUERUNG
+    # ═══════════════════════════════════════════════════════════════════════
+    rhythmus_section:
+      name: "Rhythmussteuerung"
+      icon: mdi:metronome
+      description: "Bewässerung in regelmäßigen Intervallen innerhalb eines Zeitfensters."
+      collapsed: true
+      input:
+        enable_rhythm:
+          name: "Rhythmussteuerung aktivieren"
+          default: false
+          selector:
+            boolean:
+
+        rhythm_interval_hours:
+          name: "Intervall (Stunden)"
+          description: "Alle wie viele Stunden soll die Bewässerung starten?"
+          default: 4
+          selector:
+            number:
+              min: 1
+              max: 24
+              step: 1
+              unit_of_measurement: h
+
+        rhythm_window_start:
+          name: "Zeitfenster Beginn"
+          default: "07:00:00"
+          selector:
+            time:
+
+        rhythm_window_end:
+          name: "Zeitfenster Ende"
+          default: "20:00:00"
+          selector:
+            time:
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # MODUS: SOLARÜBERSCHUSS
+    # ═══════════════════════════════════════════════════════════════════════
+    solar_section:
+      name: "Solarüberschuss-Steuerung"
+      icon: mdi:solar-power-variant
+      description: "Bewässerung bei ausreichend Solarüberschuss starten."
+      collapsed: true
+      input:
+        enable_solar:
+          name: "Solarüberschuss-Steuerung aktivieren"
+          default: false
+          selector:
+            boolean:
+
+        solar_power_sensor:
+          name: "Solarüberschuss-Sensor (Watt)"
+          description: "Sensor mit aktuellem Solarüberschuss in Watt (positiv = Überschuss)."
+          default: "sensor.platzhalter"
+          selector:
+            entity:
+              domain: sensor
+              device_class: power
+
+        solar_power_threshold:
+          name: "Leistungsschwelle (Watt)"
+          default: 500
+          selector:
+            number:
+              min: 100
+              max: 10000
+              step: 50
+              unit_of_measurement: W
+
+        solar_hysteresis_minutes:
+          name: "Hysterese-Zeit (Minuten)"
+          description: "Wie lange muss der Schwellenwert stabil überschritten sein?"
+          default: 5
+          selector:
+            number:
+              min: 1
+              max: 60
+              step: 1
+              unit_of_measurement: min
+
+        solar_time_window_enabled:
+          name: "Zeitfenster für Solar aktivieren"
+          default: true
+          selector:
+            boolean:
+
+        solar_time_start:
+          name: "Solar-Zeitfenster Beginn"
+          default: "11:00:00"
+          selector:
+            time:
+
+        solar_time_end:
+          name: "Solar-Zeitfenster Ende"
+          default: "15:00:00"
+          selector:
+            time:
+
+        solar_forecast_enabled:
+          name: "Solarvorhersage-Bedingung aktivieren"
+          description: "Bewässerung nur starten wenn die Tagesvorhersage einen Mindestwert erreicht."
+          default: false
+          selector:
+            boolean:
+
+        solar_forecast_sensor:
+          name: "Solarvorhersage-Sensor (kWh)"
+          description: "Sensor mit der Ertragsprognose für heute (z.B. Solcast, Forecast.Solar)."
+          default: "sensor.platzhalter"
+          selector:
+            entity:
+              domain: sensor
+
+        solar_forecast_min_kwh:
+          name: "Mindest-Tagesvorhersage (kWh)"
+          description: "Nur bewässern wenn die Vorhersage ÜBER diesem Wert liegt."
+          default: 15
+          selector:
+            number:
+              min: 1
+              max: 100
+              step: 0.5
+              unit_of_measurement: kWh
+
+        solar_min_interval_hours:
+          name: "Mindestabstand zwischen Solar-Starts (Stunden)"
+          description: >
+            Wie viele Stunden müssen zwischen zwei Solar-Bewässerungen mindestens vergehen?
+            Verhindert, dass bei dauerhaftem Überschuss alle Starts hintereinander verbraucht werden.
+          default: 2
+          selector:
+            number:
+              min: 1
+              max: 12
+              step: 1
+              unit_of_measurement: h
+
+        solar_last_run_helper:
+          name: "Letzter Solar-Start (input_datetime)"
+          description: >
+            Ein input_datetime-Helfer der den Zeitpunkt des letzten Solar-Starts speichert.
+            Erstelle z.B. 'input_datetime.bewaesserung_solar_letzter_start' (nur Datum+Uhrzeit, kein Datum-only).
+            Wird vom Blueprint automatisch bei jedem Solar-Start aktualisiert.
+          default: "input_datetime.platzhalter"
+          selector:
+            entity:
+              domain: input_datetime
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # GLOBALE SPERREN
+    # ═══════════════════════════════════════════════════════════════════════
+    sperren_section:
+      name: "Globale Sperren"
+      icon: mdi:shield-lock-outline
+      description: "Regensensor-Sperre, Haupt-Schalter, Batteriespeicher-Sperre (SoC) und Wasserlimit."
+      collapsed: true
+      input:
+        rain_sensor_enabled:
+          name: "Regensensor-Sperre aktivieren"
+          default: false
+          selector:
+            boolean:
+
+        rain_sensor:
+          name: "Niederschlags-Sensor (Liter/m²)"
+          description: >
+            Sensor der den Niederschlag in Liter pro m² (= mm) liefert.
+            Wenn der Wert den unten eingestellten Schwellenwert erreicht oder
+            überschreitet, wird die Bewässerung gesperrt.
+          default: "sensor.platzhalter"
+          selector:
+            entity:
+              domain: sensor
+
+        rain_threshold:
+          name: "Niederschlags-Schwellenwert (L/m²)"
+          description: >
+            Ab diesem Wert (in Liter pro m²) wird die Bewässerung gesperrt.
+            Beispiel: 2.0 → ab 2 L/m² Niederschlag keine Bewässerung.
+          default: 2.0
+          selector:
+            number:
+              min: 0.5
+              max: 50
+              step: 0.5
+              unit_of_measurement: "L/m²"
+
+        master_switch_enabled:
+          name: "Haupt-Schalter aktivieren"
+          default: false
+          selector:
+            boolean:
+
+        master_switch:
+          name: "Haupt-Schalter (Globale Sperre)"
+          description: >
+            Nur bewässern wenn dieser Schalter eingeschaltet ist.
+            Nur relevant wenn oben aktiviert.
+          default: "input_boolean.platzhalter"
+          selector:
+            entity:
+              domain:
+                - input_boolean
+                - switch
+
+        battery_soc_enabled:
+          name: "Batteriespeicher-Sperre aktivieren"
+          default: false
+          selector:
+            boolean:
+
+        battery_soc_sensor:
+          name: "Batteriespeicher SoC-Sensor (%)"
+          description: >
+            Sensor der den Ladezustand (State of Charge) des Hausspeichers in Prozent liefert.
+            Bewässerung wird erst freigegeben wenn der SoC den Mindestwert erreicht hat.
+          default: "sensor.platzhalter"
+          selector:
+            entity:
+              domain: sensor
+              device_class: battery
+
+        battery_soc_threshold:
+          name: "Mindest-Ladezustand (SoC %)"
+          description: >
+            Erst ab diesem Ladezustand (in %) wird die Bewässerung freigegeben.
+            Beispiel: 55 → Bewässerung erst ab 55% Speicherladung.
+          default: 55
+          selector:
+            number:
+              min: 5
+              max: 100
+              step: 5
+              unit_of_measurement: "%"
+
+        water_limit_enabled:
+          name: "Wasserlimit pro Durchgang aktivieren"
+          default: false
+          selector:
+            boolean:
+
+        water_limit_sensor:
+          name: "Wasserverbrauchs-Sensor (Liter)"
+          description: >
+            Sensor der den aktuellen Wasserverbrauch in Liter liefert.
+            Der Blueprint merkt sich den Startwert und stoppt, sobald die
+            Differenz das Limit erreicht. Geeignet sind z.B. Durchflusssensoren.
+          default: "sensor.platzhalter"
+          selector:
+            entity:
+              domain: sensor
+
+        water_limit_liters:
+          name: "Maximale Literzahl pro Durchgang"
+          description: >
+            Nach wie vielen Litern soll die Bewässerung gestoppt werden,
+            auch wenn die eingestellte Dauer noch nicht abgelaufen ist?
+          default: 100
+          selector:
+            number:
+              min: 5
+              max: 1000
+              step: 5
+              unit_of_measurement: L
+
+# ─────────────────────────────────────────────────────────────────────────────
+# VARIABLEN
+# ─────────────────────────────────────────────────────────────────────────────
+variables:
+  v_switches: !input irrigation_switches
+  v_duration: !input irrigation_duration
+  v_max_starts: !input max_starts_per_day
+  v_counter: !input starts_counter
+  v_water_limit_enabled: !input water_limit_enabled
+  v_water_sensor: !input water_limit_sensor
+  v_water_limit: !input water_limit_liters
+
+  v_enable_schedule: !input enable_schedule
+  v_enable_fixed: !input enable_fixed_times
+  v_enable_rhythm: !input enable_rhythm
+  v_enable_solar: !input enable_solar
+
+  v_schedule: !input schedule_entity
+
+  v_ft1_enabled: !input fixed_time_1_enabled
+  v_ft2_enabled: !input fixed_time_2_enabled
+  v_ft3_enabled: !input fixed_time_3_enabled
+
+  v_rhythm_interval: !input rhythm_interval_hours
+  v_rhythm_start: !input rhythm_window_start
+  v_rhythm_end: !input rhythm_window_end
+
+  v_solar_sensor: !input solar_power_sensor
+  v_solar_threshold: !input solar_power_threshold
+  v_solar_time_enabled: !input solar_time_window_enabled
+  v_solar_start: !input solar_time_start
+  v_solar_end: !input solar_time_end
+  v_solar_forecast_enabled: !input solar_forecast_enabled
+  v_solar_forecast_sensor: !input solar_forecast_sensor
+  v_solar_forecast_min: !input solar_forecast_min_kwh
+  v_solar_min_interval: !input solar_min_interval_hours
+  v_solar_last_run: !input solar_last_run_helper
+
+  v_rain_enabled: !input rain_sensor_enabled
+  v_rain_sensor: !input rain_sensor
+  v_rain_threshold: !input rain_threshold
+  v_master_enabled: !input master_switch_enabled
+  v_master_switch: !input master_switch
+  v_battery_enabled: !input battery_soc_enabled
+  v_battery_sensor: !input battery_soc_sensor
+  v_battery_threshold: !input battery_soc_threshold
+
+# ─────────────────────────────────────────────────────────────────────────────
+# TRIGGER
+# ─────────────────────────────────────────────────────────────────────────────
+trigger:
+  - platform: state
+    entity_id: !input schedule_entity
+    to: "on"
+    id: trigger_schedule
+
+  - platform: time
+    at: !input fixed_time_1
+    id: trigger_fixed_1
+
+  - platform: time
+    at: !input fixed_time_2
+    id: trigger_fixed_2
+
+  - platform: time
+    at: !input fixed_time_3
+    id: trigger_fixed_3
+
+  - platform: time_pattern
+    minutes: "0"
+    id: trigger_rhythm
+
+  - platform: numeric_state
+    entity_id: !input solar_power_sensor
+    above: !input solar_power_threshold
+    for:
+      minutes: !input solar_hysteresis_minutes
+    id: trigger_solar
+
+  - platform: time
+    at: "00:00:00"
+    id: trigger_reset_counter
+
+# ─────────────────────────────────────────────────────────────────────────────
+# GEMEINSAME BEDINGUNG: REGEN-SPERRE (Template für alle Modi)
+# ─────────────────────────────────────────────────────────────────────────────
+# Die Regensperre prüft jetzt den numerischen Niederschlagswert gegen
+# den eingestellten Schwellenwert (L/m²) statt eines binary_sensor.
+
+# ─────────────────────────────────────────────────────────────────────────────
+# AKTIONEN
+# ─────────────────────────────────────────────────────────────────────────────
+action:
+  - choose:
+
+      # ══════════════════════════════════════════════════════════════════════
+      # MODUS: ZEITPLAN-HELFER
+      # ══════════════════════════════════════════════════════════════════════
+      - conditions:
+          - condition: trigger
+            id: trigger_schedule
+          - condition: template
+            value_template: "{{ v_enable_schedule | bool(false) }}"
+          - condition: template
+            value_template: "{{ states(v_counter) | int(0) < v_max_starts | int(3) }}"
+          - condition: template
+            value_template: >
+              {% if v_rain_enabled | bool(false) %}
+                {{ states(v_rain_sensor) | float(0) < v_rain_threshold | float(2) }}
+              {% else %}
+                true
+              {% endif %}
+          - condition: template
+            value_template: >
+              {% if v_master_enabled | bool(false) %}
+                {{ states(v_master_switch) == 'on' }}
+              {% else %}
+                true
+              {% endif %}
+          - condition: template
+            value_template: >
+              {% if v_battery_enabled | bool(false) %}
+                {{ states(v_battery_sensor) | float(0) >= v_battery_threshold | float(55) }}
+              {% else %}
+                true
+              {% endif %}
+          - condition: template
+            value_template: >
+              {% set ns = namespace(any_on=false) %}
+              {% for sw in v_switches %}
+                {% if states(sw) == 'on' %}{% set ns.any_on = true %}{% endif %}
+              {% endfor %}
+              {{ not ns.any_on }}
+        sequence:
+          - service: input_number.set_value
+            target:
+              entity_id: !input starts_counter
+            data:
+              value: "{{ states(v_counter) | int(0) + 1 }}"
+          - variables:
+              water_start: >
+                {% if v_water_limit_enabled | bool(false) %}
+                  {{ states(v_water_sensor) | float(0) }}
+                {% else %}
+                  0
+                {% endif %}
+          - repeat:
+              for_each: "{{ v_switches }}"
+              sequence:
+                - service: switch.turn_on
+                  target:
+                    entity_id: "{{ repeat.item }}"
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ v_water_limit_enabled | bool(false) }}"
+                sequence:
+                  - repeat:
+                      while:
+                        - condition: template
+                          value_template: >
+                            {{ repeat.index <= (v_duration | int(20)) }}
+                        - condition: template
+                          value_template: >
+                            {{ (states(v_water_sensor) | float(0) - water_start | float(0))
+                               < v_water_limit | float(100) }}
+                      sequence:
+                        - delay:
+                            minutes: 1
+            default:
+              - delay:
+                  minutes: "{{ v_duration }}"
+          - repeat:
+              for_each: "{{ v_switches }}"
+              sequence:
+                - service: switch.turn_off
+                  target:
+                    entity_id: "{{ repeat.item }}"
+
+      # ══════════════════════════════════════════════════════════════════════
+      # MODUS: FESTE UHRZEIT 1
+      # ══════════════════════════════════════════════════════════════════════
+      - conditions:
+          - condition: trigger
+            id: trigger_fixed_1
+          - condition: template
+            value_template: "{{ v_enable_fixed | bool(false) and v_ft1_enabled | bool(false) }}"
+          - condition: template
+            value_template: "{{ states(v_counter) | int(0) < v_max_starts | int(3) }}"
+          - condition: template
+            value_template: >
+              {% if v_rain_enabled | bool(false) %}
+                {{ states(v_rain_sensor) | float(0) < v_rain_threshold | float(2) }}
+              {% else %}
+                true
+              {% endif %}
+          - condition: template
+            value_template: >
+              {% if v_master_enabled | bool(false) %}
+                {{ states(v_master_switch) == 'on' }}
+              {% else %}
+                true
+              {% endif %}
+          - condition: template
+            value_template: >
+              {% if v_battery_enabled | bool(false) %}
+                {{ states(v_battery_sensor) | float(0) >= v_battery_threshold | float(55) }}
+              {% else %}
+                true
+              {% endif %}
+          - condition: template
+            value_template: >
+              {% set ns = namespace(any_on=false) %}
+              {% for sw in v_switches %}
+                {% if states(sw) == 'on' %}{% set ns.any_on = true %}{% endif %}
+              {% endfor %}
+              {{ not ns.any_on }}
+        sequence:
+          - service: input_number.set_value
+            target:
+              entity_id: !input starts_counter
+            data:
+              value: "{{ states(v_counter) | int(0) + 1 }}"
+          - variables:
+              water_start: >
+                {% if v_water_limit_enabled | bool(false) %}
+                  {{ states(v_water_sensor) | float(0) }}
+                {% else %}
+                  0
+                {% endif %}
+          - repeat:
+              for_each: "{{ v_switches }}"
+              sequence:
+                - service: switch.turn_on
+                  target:
+                    entity_id: "{{ repeat.item }}"
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ v_water_limit_enabled | bool(false) }}"
+                sequence:
+                  - repeat:
+                      while:
+                        - condition: template
+                          value_template: >
+                            {{ repeat.index <= (v_duration | int(20)) }}
+                        - condition: template
+                          value_template: >
+                            {{ (states(v_water_sensor) | float(0) - water_start | float(0))
+                               < v_water_limit | float(100) }}
+                      sequence:
+                        - delay:
+                            minutes: 1
+            default:
+              - delay:
+                  minutes: "{{ v_duration }}"
+          - repeat:
+              for_each: "{{ v_switches }}"
+              sequence:
+                - service: switch.turn_off
+                  target:
+                    entity_id: "{{ repeat.item }}"
+
+      # ══════════════════════════════════════════════════════════════════════
+      # MODUS: FESTE UHRZEIT 2
+      # ══════════════════════════════════════════════════════════════════════
+      - conditions:
+          - condition: trigger
+            id: trigger_fixed_2
+          - condition: template
+            value_template: "{{ v_enable_fixed | bool(false) and v_ft2_enabled | bool(false) }}"
+          - condition: template
+            value_template: "{{ states(v_counter) | int(0) < v_max_starts | int(3) }}"
+          - condition: template
+            value_template: >
+              {% if v_rain_enabled | bool(false) %}
+                {{ states(v_rain_sensor) | float(0) < v_rain_threshold | float(2) }}
+              {% else %}
+                true
+              {% endif %}
+          - condition: template
+            value_template: >
+              {% if v_master_enabled | bool(false) %}
+                {{ states(v_master_switch) == 'on' }}
+              {% else %}
+                true
+              {% endif %}
+          - condition: template
+            value_template: >
+              {% if v_battery_enabled | bool(false) %}
+                {{ states(v_battery_sensor) | float(0) >= v_battery_threshold | float(55) }}
+              {% else %}
+                true
+              {% endif %}
+          - condition: template
+            value_template: >
+              {% set ns = namespace(any_on=false) %}
+              {% for sw in v_switches %}
+                {% if states(sw) == 'on' %}{% set ns.any_on = true %}{% endif %}
+              {% endfor %}
+              {{ not ns.any_on }}
+        sequence:
+          - service: input_number.set_value
+            target:
+              entity_id: !input starts_counter
+            data:
+              value: "{{ states(v_counter) | int(0) + 1 }}"
+          - variables:
+              water_start: >
+                {% if v_water_limit_enabled | bool(false) %}
+                  {{ states(v_water_sensor) | float(0) }}
+                {% else %}
+                  0
+                {% endif %}
+          - repeat:
+              for_each: "{{ v_switches }}"
+              sequence:
+                - service: switch.turn_on
+                  target:
+                    entity_id: "{{ repeat.item }}"
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ v_water_limit_enabled | bool(false) }}"
+                sequence:
+                  - repeat:
+                      while:
+                        - condition: template
+                          value_template: >
+                            {{ repeat.index <= (v_duration | int(20)) }}
+                        - condition: template
+                          value_template: >
+                            {{ (states(v_water_sensor) | float(0) - water_start | float(0))
+                               < v_water_limit | float(100) }}
+                      sequence:
+                        - delay:
+                            minutes: 1
+            default:
+              - delay:
+                  minutes: "{{ v_duration }}"
+          - repeat:
+              for_each: "{{ v_switches }}"
+              sequence:
+                - service: switch.turn_off
+                  target:
+                    entity_id: "{{ repeat.item }}"
+
+      # ══════════════════════════════════════════════════════════════════════
+      # MODUS: FESTE UHRZEIT 3
+      # ══════════════════════════════════════════════════════════════════════
+      - conditions:
+          - condition: trigger
+            id: trigger_fixed_3
+          - condition: template
+            value_template: "{{ v_enable_fixed | bool(false) and v_ft3_enabled | bool(false) }}"
+          - condition: template
+            value_template: "{{ states(v_counter) | int(0) < v_max_starts | int(3) }}"
+          - condition: template
+            value_template: >
+              {% if v_rain_enabled | bool(false) %}
+                {{ states(v_rain_sensor) | float(0) < v_rain_threshold | float(2) }}
+              {% else %}
+                true
+              {% endif %}
+          - condition: template
+            value_template: >
+              {% if v_master_enabled | bool(false) %}
+                {{ states(v_master_switch) == 'on' }}
+              {% else %}
+                true
+              {% endif %}
+          - condition: template
+            value_template: >
+              {% if v_battery_enabled | bool(false) %}
+                {{ states(v_battery_sensor) | float(0) >= v_battery_threshold | float(55) }}
+              {% else %}
+                true
+              {% endif %}
+          - condition: template
+            value_template: >
+              {% set ns = namespace(any_on=false) %}
+              {% for sw in v_switches %}
+                {% if states(sw) == 'on' %}{% set ns.any_on = true %}{% endif %}
+              {% endfor %}
+              {{ not ns.any_on }}
+        sequence:
+          - service: input_number.set_value
+            target:
+              entity_id: !input starts_counter
+            data:
+              value: "{{ states(v_counter) | int(0) + 1 }}"
+          - variables:
+              water_start: >
+                {% if v_water_limit_enabled | bool(false) %}
+                  {{ states(v_water_sensor) | float(0) }}
+                {% else %}
+                  0
+                {% endif %}
+          - repeat:
+              for_each: "{{ v_switches }}"
+              sequence:
+                - service: switch.turn_on
+                  target:
+                    entity_id: "{{ repeat.item }}"
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ v_water_limit_enabled | bool(false) }}"
+                sequence:
+                  - repeat:
+                      while:
+                        - condition: template
+                          value_template: >
+                            {{ repeat.index <= (v_duration | int(20)) }}
+                        - condition: template
+                          value_template: >
+                            {{ (states(v_water_sensor) | float(0) - water_start | float(0))
+                               < v_water_limit | float(100) }}
+                      sequence:
+                        - delay:
+                            minutes: 1
+            default:
+              - delay:
+                  minutes: "{{ v_duration }}"
+          - repeat:
+              for_each: "{{ v_switches }}"
+              sequence:
+                - service: switch.turn_off
+                  target:
+                    entity_id: "{{ repeat.item }}"
+
+      # ══════════════════════════════════════════════════════════════════════
+      # MODUS: RHYTHMUSSTEUERUNG
+      # ══════════════════════════════════════════════════════════════════════
+      - conditions:
+          - condition: trigger
+            id: trigger_rhythm
+          - condition: template
+            value_template: "{{ v_enable_rhythm | bool(false) }}"
+          - condition: template
+            value_template: "{{ states(v_counter) | int(0) < v_max_starts | int(3) }}"
+          - condition: template
+            value_template: >
+              {% set now_t = now().strftime('%H:%M:%S') %}
+              {% set start_h = v_rhythm_start.split(':')[0] | int(7) %}
+              {% set hours_since_start = now().hour - start_h %}
+              {{ v_rhythm_start <= now_t <= v_rhythm_end and
+                 hours_since_start >= 0 and
+                 hours_since_start % (v_rhythm_interval | int(4)) == 0 }}
+          - condition: template
+            value_template: >
+              {% if v_rain_enabled | bool(false) %}
+                {{ states(v_rain_sensor) | float(0) < v_rain_threshold | float(2) }}
+              {% else %}
+                true
+              {% endif %}
+          - condition: template
+            value_template: >
+              {% if v_master_enabled | bool(false) %}
+                {{ states(v_master_switch) == 'on' }}
+              {% else %}
+                true
+              {% endif %}
+          - condition: template
+            value_template: >
+              {% if v_battery_enabled | bool(false) %}
+                {{ states(v_battery_sensor) | float(0) >= v_battery_threshold | float(55) }}
+              {% else %}
+                true
+              {% endif %}
+          - condition: template
+            value_template: >
+              {% set ns = namespace(any_on=false) %}
+              {% for sw in v_switches %}
+                {% if states(sw) == 'on' %}{% set ns.any_on = true %}{% endif %}
+              {% endfor %}
+              {{ not ns.any_on }}
+        sequence:
+          - service: input_number.set_value
+            target:
+              entity_id: !input starts_counter
+            data:
+              value: "{{ states(v_counter) | int(0) + 1 }}"
+          - variables:
+              water_start: >
+                {% if v_water_limit_enabled | bool(false) %}
+                  {{ states(v_water_sensor) | float(0) }}
+                {% else %}
+                  0
+                {% endif %}
+          - repeat:
+              for_each: "{{ v_switches }}"
+              sequence:
+                - service: switch.turn_on
+                  target:
+                    entity_id: "{{ repeat.item }}"
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ v_water_limit_enabled | bool(false) }}"
+                sequence:
+                  - repeat:
+                      while:
+                        - condition: template
+                          value_template: >
+                            {{ repeat.index <= (v_duration | int(20)) }}
+                        - condition: template
+                          value_template: >
+                            {{ (states(v_water_sensor) | float(0) - water_start | float(0))
+                               < v_water_limit | float(100) }}
+                      sequence:
+                        - delay:
+                            minutes: 1
+            default:
+              - delay:
+                  minutes: "{{ v_duration }}"
+          - repeat:
+              for_each: "{{ v_switches }}"
+              sequence:
+                - service: switch.turn_off
+                  target:
+                    entity_id: "{{ repeat.item }}"
+
+      # ══════════════════════════════════════════════════════════════════════
+      # MODUS: SOLARÜBERSCHUSS
+      # ══════════════════════════════════════════════════════════════════════
+      - conditions:
+          - condition: trigger
+            id: trigger_solar
+          - condition: template
+            value_template: "{{ v_enable_solar | bool(false) }}"
+          - condition: template
+            value_template: "{{ states(v_counter) | int(0) < v_max_starts | int(3) }}"
+          - condition: template
+            value_template: >
+              {% if v_solar_time_enabled | bool(true) %}
+                {% set now_t = now().strftime('%H:%M:%S') %}
+                {{ v_solar_start <= now_t <= v_solar_end }}
+              {% else %}
+                true
+              {% endif %}
+          - condition: template
+            value_template: >
+              {% if v_solar_forecast_enabled | bool(false) %}
+                {{ states(v_solar_forecast_sensor) | float(0) >= v_solar_forecast_min | float(15) }}
+              {% else %}
+                true
+              {% endif %}
+          - condition: template
+            value_template: >
+              {% set ts = state_attr(v_solar_last_run, 'timestamp') %}
+              {% if ts is none or ts == 0 %}
+                true
+              {% else %}
+                {{ (as_timestamp(now()) - ts) / 3600
+                   >= v_solar_min_interval | int(2) }}
+              {% endif %}
+          - condition: template
+            value_template: >
+              {% if v_rain_enabled | bool(false) %}
+                {{ states(v_rain_sensor) | float(0) < v_rain_threshold | float(2) }}
+              {% else %}
+                true
+              {% endif %}
+          - condition: template
+            value_template: >
+              {% if v_master_enabled | bool(false) %}
+                {{ states(v_master_switch) == 'on' }}
+              {% else %}
+                true
+              {% endif %}
+          - condition: template
+            value_template: >
+              {% if v_battery_enabled | bool(false) %}
+                {{ states(v_battery_sensor) | float(0) >= v_battery_threshold | float(55) }}
+              {% else %}
+                true
+              {% endif %}
+          - condition: template
+            value_template: >
+              {% set ns = namespace(any_on=false) %}
+              {% for sw in v_switches %}
+                {% if states(sw) == 'on' %}{% set ns.any_on = true %}{% endif %}
+              {% endfor %}
+              {{ not ns.any_on }}
+        sequence:
+          - service: input_number.set_value
+            target:
+              entity_id: !input starts_counter
+            data:
+              value: "{{ states(v_counter) | int(0) + 1 }}"
+          - service: input_datetime.set_datetime
+            target:
+              entity_id: !input solar_last_run_helper
+            data:
+              datetime: "{{ now().strftime('%Y-%m-%d %H:%M:%S') }}"
+          - variables:
+              water_start: >
+                {% if v_water_limit_enabled | bool(false) %}
+                  {{ states(v_water_sensor) | float(0) }}
+                {% else %}
+                  0
+                {% endif %}
+          - repeat:
+              for_each: "{{ v_switches }}"
+              sequence:
+                - service: switch.turn_on
+                  target:
+                    entity_id: "{{ repeat.item }}"
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ v_water_limit_enabled | bool(false) }}"
+                sequence:
+                  - repeat:
+                      while:
+                        - condition: template
+                          value_template: >
+                            {{ repeat.index <= (v_duration | int(20)) }}
+                        - condition: template
+                          value_template: >
+                            {{ (states(v_water_sensor) | float(0) - water_start | float(0))
+                               < v_water_limit | float(100) }}
+                      sequence:
+                        - delay:
+                            minutes: 1
+            default:
+              - delay:
+                  minutes: "{{ v_duration }}"
+          - repeat:
+              for_each: "{{ v_switches }}"
+              sequence:
+                - service: switch.turn_off
+                  target:
+                    entity_id: "{{ repeat.item }}"
+
+      # ══════════════════════════════════════════════════════════════════════
+      # RESET: TAGESZÄHLER UM MITTERNACHT
+      # ══════════════════════════════════════════════════════════════════════
+      - conditions:
+          - condition: trigger
+            id: trigger_reset_counter
+        sequence:
+          - service: input_number.set_value
+            target:
+              entity_id: !input starts_counter
+            data:
+              value: 0
+
+mode: single
+max_exceeded: silent
