@@ -1,7 +1,15 @@
-# 🌱 Smarte Gartenbewässerung
+<div align="center">
+  
+  # 🌱 Smarte Gartenbewässerung
+  
+</div>
 
+<div align="center">
+  
 [![README English](https://img.shields.io/badge/README-EN-blue)](https://github.com/jayjojayson/HA-smart-garden-irrigation/blob/main/README_eng.md)
 [![Support](https://img.shields.io/badge/%20-Support%20Me-steelblue?style=flat&logo=paypal&logoColor=white)](https://www.paypal.me/quadFlyerFW)
+
+</div>
 
 <p align="center">
   <a href="https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fraw.githubusercontent.com%2Fjayjojayson%2FHA-smart-garden-irrigation%2Fmain%2Fsmart_garden_irrigation.yaml">
