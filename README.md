@@ -53,7 +53,7 @@ Der Blueprint unterstützt bis zu **4 Bewässerungsmodi**, die sich einzeln oder
 
 **Pflicht:**
 - ✅ Mindestens einen `switch`-Schalter für die Bewässerung
-- ✅ Einen `input_number`-Helfer als Tageszähler (z. B. `input_number.bewaesserung_starts_heute`, min=0, max=10, step=1)
+- ✅ Einen `input_number`-Helfer als Tageszähler (z. B. `input_number.bewaesserung_starts_heute`, min=0, max=10, step=1) 
 
 **Optional (je nach verwendetem Modus):**
 - ➕ Sensor für Solarüberschuss (Watt, `device_class: power`)

@@ -4,7 +4,7 @@
   
 </div>
 
-<div align="center">
+<div align="center"> 
 
 [![README Deutsch](https://img.shields.io/badge/README-DE-orange)](https://github.com/jayjojayson/HA-smart-garden-irrigation/blob/main/README.md)
 [![Support](https://img.shields.io/badge/%20-Support%20Me-steelblue?style=flat&logo=paypal&logoColor=white)](https://www.paypal.me/quadFlyerFW)
