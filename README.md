@@ -78,6 +78,8 @@ Der Blueprint ist in übersichtliche, einklappbare Sektionen unterteilt:
 
 > 💡 **Tipp:** Öffne nur die Sektionen, die du wirklich brauchst — der Rest bleibt zugeklappt und stört nicht.
 
+<img width="80%" height="auto" alt="image" src="https://github.com/user-attachments/assets/d45c5455-73dd-45d3-9b0b-418993af08d1" />
+
 ---
 
 ### 🚀 Installation
