@@ -14,7 +14,7 @@ blueprint:
 
     🔄 Rhythmussteuerung → Alle X Stunden innerhalb eines Zeitfensters
 
-    ☀️ Solarüberschuss → Nutze überschüssigen Solarstrom automatisch
+    ☀️ Solarüberschuss → Nutze überschüssigen Solarstrom automatisch — mit optionaler Hintergrund-Prüfung für Überschuss VOR dem Zeitfenster
 
 
     🛡️ SCHUTZMECHANISMEN
@@ -217,7 +217,7 @@ blueprint:
     solar_section:
       name: "Solarüberschuss-Steuerung"
       icon: mdi:solar-power-variant
-      description: "Bewässerung bei ausreichend Solarüberschuss starten."
+      description: "Bewässerung bei ausreichend Solarüberschuss starten — inkl. Hintergrund-Prüfung für Überschuss VOR dem Zeitfenster."
       collapsed: true
       input:
         enable_solar:
@@ -324,6 +324,29 @@ blueprint:
             entity:
               domain: input_datetime
 
+        solar_check_enabled:
+          name: "Hintergrund-Prüfung aktivieren"
+          description: >
+            Prüft in regelmäßigen Abständen Solarüberschuss — auch VOR dem Solar-Zeitfenster.
+            Nützlich wenn morgens schon Überschuss da ist, das Zeitfenster aber erst später startet.
+          default: false
+          selector:
+            boolean:
+
+        solar_check_interval_minutes:
+          name: "Prüfintervall (Minuten)"
+          description: >
+            Wie oft soll im Hintergrund geprüft werden?
+            Beispiel: 5 → alle 5 Minuten wird geprüft, ob Solarüberschuss verfügbar ist.
+            Tipp: Teiler von 60 (1, 2, 3, 5, 10, 15, 20, 30) liefern gleichmäßige Abstände.
+          default: 5
+          selector:
+            number:
+              min: 1
+              max: 30
+              step: 1
+              unit_of_measurement: min
+
     # ═══════════════════════════════════════════════════════════════════════
     # GLOBALE SPERREN
     # ═══════════════════════════════════════════════════════════════════════
@@ -373,7 +396,6 @@ blueprint:
           name: "Haupt-Schalter (Globale Sperre)"
           description: >
             Nur bewässern wenn dieser Schalter eingeschaltet ist.
-            Nur relevant wenn oben aktiviert.
           default: "input_boolean.platzhalter"
           selector:
             entity:
@@ -478,6 +500,8 @@ variables:
   v_solar_forecast_min: !input solar_forecast_min_kwh
   v_solar_min_interval: !input solar_min_interval_hours
   v_solar_last_run: !input solar_last_run_helper
+  v_solar_check_enabled: !input solar_check_enabled
+  v_solar_check_interval: !input solar_check_interval_minutes
 
   v_rain_enabled: !input rain_sensor_enabled
   v_rain_sensor: !input rain_sensor
@@ -520,15 +544,16 @@ trigger:
       minutes: !input solar_hysteresis_minutes
     id: trigger_solar
 
+  # Feuert jede Minute; das tatsächliche Intervall wird per Condition
+  # gegen v_solar_check_interval gefiltert (Modulo-Logik). Dadurch
+  # umgehen wir, dass Templates/Variablen in Triggern nicht verfügbar sind.
+  - platform: time_pattern
+    minutes: "/1"
+    id: trigger_solar_check
+
   - platform: time
     at: "00:00:00"
     id: trigger_reset_counter
-
-# ─────────────────────────────────────────────────────────────────────────────
-# GEMEINSAME BEDINGUNG: REGEN-SPERRE (Template für alle Modi)
-# ─────────────────────────────────────────────────────────────────────────────
-# Die Regensperre prüft jetzt den numerischen Niederschlagswert gegen
-# den eingestellten Schwellenwert (L/m²) statt eines binary_sensor.
 
 # ─────────────────────────────────────────────────────────────────────────────
 # AKTIONEN
@@ -972,6 +997,134 @@ action:
             id: trigger_solar
           - condition: template
             value_template: "{{ v_enable_solar | bool(false) }}"
+          - condition: template
+            value_template: "{{ states(v_counter) | int(0) < v_max_starts | int(3) }}"
+          - condition: template
+            value_template: >
+              {% if v_solar_time_enabled | bool(true) %}
+                {% set now_t = now().strftime('%H:%M:%S') %}
+                {{ v_solar_start <= now_t <= v_solar_end }}
+              {% else %}
+                true
+              {% endif %}
+          - condition: template
+            value_template: >
+              {% if v_solar_forecast_enabled | bool(false) %}
+                {{ states(v_solar_forecast_sensor) | float(0) >= v_solar_forecast_min | float(15) }}
+              {% else %}
+                true
+              {% endif %}
+          - condition: template
+            value_template: >
+              {% set ts = state_attr(v_solar_last_run, 'timestamp') %}
+              {% if ts is none or ts == 0 %}
+                true
+              {% else %}
+                {{ (as_timestamp(now()) - ts) / 3600
+                   >= v_solar_min_interval | int(2) }}
+              {% endif %}
+          - condition: template
+            value_template: >
+              {% if v_rain_enabled | bool(false) %}
+                {{ states(v_rain_sensor) | float(0) < v_rain_threshold | float(2) }}
+              {% else %}
+                true
+              {% endif %}
+          - condition: template
+            value_template: >
+              {% if v_master_enabled | bool(false) %}
+                {{ states(v_master_switch) == 'on' }}
+              {% else %}
+                true
+              {% endif %}
+          - condition: template
+            value_template: >
+              {% if v_battery_enabled | bool(false) %}
+                {{ states(v_battery_sensor) | float(0) >= v_battery_threshold | float(55) }}
+              {% else %}
+                true
+              {% endif %}
+          - condition: template
+            value_template: >
+              {% set ns = namespace(any_on=false) %}
+              {% for sw in v_switches %}
+                {% if states(sw) == 'on' %}{% set ns.any_on = true %}{% endif %}
+              {% endfor %}
+              {{ not ns.any_on }}
+        sequence:
+          - service: input_number.set_value
+            target:
+              entity_id: !input starts_counter
+            data:
+              value: "{{ states(v_counter) | int(0) + 1 }}"
+          - service: input_datetime.set_datetime
+            target:
+              entity_id: !input solar_last_run_helper
+            data:
+              datetime: "{{ now().strftime('%Y-%m-%d %H:%M:%S') }}"
+          - variables:
+              water_start: >
+                {% if v_water_limit_enabled | bool(false) %}
+                  {{ states(v_water_sensor) | float(0) }}
+                {% else %}
+                  0
+                {% endif %}
+          - repeat:
+              for_each: "{{ v_switches }}"
+              sequence:
+                - service: switch.turn_on
+                  target:
+                    entity_id: "{{ repeat.item }}"
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ v_water_limit_enabled | bool(false) }}"
+                sequence:
+                  - repeat:
+                      while:
+                        - condition: template
+                          value_template: >
+                            {{ repeat.index <= (v_duration | int(20)) }}
+                        - condition: template
+                          value_template: >
+                            {{ (states(v_water_sensor) | float(0) - water_start | float(0))
+                               < v_water_limit | float(100) }}
+                      sequence:
+                        - delay:
+                            minutes: 1
+            default:
+              - delay:
+                  minutes: "{{ v_duration }}"
+          - repeat:
+              for_each: "{{ v_switches }}"
+              sequence:
+                - service: switch.turn_off
+                  target:
+                    entity_id: "{{ repeat.item }}"
+
+      # ══════════════════════════════════════════════════════════════════════
+      # MODUS: SOLARÜBERSCHUSS HINTERGRUND-PRÜFUNG
+      # Trigger feuert jede Minute → Modulo-Condition reduziert auf das
+      # gewünschte Prüfintervall. Zusätzlich wird der Solar-Sensor explizit
+      # gegen den Schwellwert geprüft (das macht der numeric_state-Trigger
+      # oben automatisch, der time_pattern-Trigger nicht).
+      # ══════════════════════════════════════════════════════════════════════
+      - conditions:
+          - condition: trigger
+            id: trigger_solar_check
+          - condition: template
+            value_template: "{{ v_solar_check_enabled | bool(false) }}"
+          - condition: template
+            value_template: "{{ v_enable_solar | bool(false) }}"
+          # Prüfintervall: nur jede N-te Minute weitermachen
+          - condition: template
+            value_template: >
+              {{ (v_solar_check_interval | int(5)) > 0 and
+                 (now().minute % (v_solar_check_interval | int(5))) == 0 }}
+          # Solarüberschuss MUSS aktuell über der Schwelle liegen
+          - condition: template
+            value_template: >
+              {{ states(v_solar_sensor) | float(0) >= v_solar_threshold | float(500) }}
           - condition: template
             value_template: "{{ states(v_counter) | int(0) < v_max_starts | int(3) }}"
           - condition: template
